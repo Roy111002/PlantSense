@@ -12,6 +12,9 @@
 
 Do not commit `src/blynk_credentials.h`; it contains the device secret.
 
+When using Arduino IDE without that header, edit the fallback credential block
+near the top of `src/main.cpp`. The header takes precedence when both exist.
+
 ## 2. Create template datastreams
 
 Create these six Virtual Pin datastreams in the template:

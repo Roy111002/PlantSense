@@ -126,6 +126,10 @@ Edit `src\blynk_credentials.h` and set:
 
 Example server URL: `http://192.168.1.10:5000/analyze`.
 
+For Arduino IDE, open `PlantSense.ino`. If `blynk_credentials.h` is not added
+to the sketch, enter the same values in the fallback block at the top of
+`src/main.cpp`; an available header always takes precedence.
+
 Before powering actuators, replace every GPIO value of `99` in `src/main.cpp`
 with the final circuit pin map and calibrate `DRY_VALUE`, `WET_VALUE`, and the
 control thresholds. The ADS1115 reads soil moisture on channel A0.

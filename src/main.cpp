@@ -19,7 +19,37 @@
 
 */
 
+#ifdef __has_include
+#if __has_include("blynk_credentials.h")
 #include "blynk_credentials.h"
+#endif
+#endif
+
+// Arduino IDE fallback. Edit these values only when the credentials header
+// is not included with the sketch.
+#ifndef BLYNK_TEMPLATE_ID
+#define BLYNK_TEMPLATE_ID "YOUR_BLYNK_TEMPLATE_ID"
+#endif
+
+#ifndef BLYNK_TEMPLATE_NAME
+#define BLYNK_TEMPLATE_NAME "PlantSense AI Pod"
+#endif
+
+#ifndef BLYNK_AUTH_TOKEN
+#define BLYNK_AUTH_TOKEN "YOUR_BLYNK_DEVICE_AUTH_TOKEN"
+#endif
+
+#ifndef PLANTSENSE_WIFI_SSID
+#define PLANTSENSE_WIFI_SSID "YOUR_WIFI_SSID"
+#endif
+
+#ifndef PLANTSENSE_WIFI_PASSWORD
+#define PLANTSENSE_WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+#endif
+
+#ifndef PLANTSENSE_AI_SERVER_URL
+#define PLANTSENSE_AI_SERVER_URL "http://YOUR_SERVER_IP:5000/analyze"
+#endif
 
 #define BLYNK_PRINT Serial
 
