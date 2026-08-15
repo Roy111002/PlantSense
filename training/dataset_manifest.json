@@ -1,0 +1,16 @@
+{
+  "dataset_id": "geraldmc/plantvillage-full",
+  "configuration": null,
+  "revision": "f808f2706d3ce50ce14652d2b6863d3cc30cf9c4",
+  "source_split": "train",
+  "split_field": "split",
+  "train_split_value": "train",
+  "test_split_value": "test",
+  "label_field": "class_label",
+  "license": "CC0-1.0",
+  "source": "https://huggingface.co/datasets/geraldmc/plantvillage-full",
+  "streaming": false,
+  "cache_policy": "disposable_project_cache",
+  "upstream_dataset_commit": "7f7ecc7e1eaca78107e3affe7cb5abd9427e139a",
+  "notes": "Parquet release of PlantVillage color images. Its split column is leaf-grouped where upstream leaf metadata exists; do not replace it with a random image-level split."
+}

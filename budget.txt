@@ -1,0 +1,14 @@
+Components and their price for PlantSense:
+
+1. Capacitors, resistors, diodes -> ???
+2. ESP32 - Rs. 500
+3. ESP-CAM = Rs. 600
+4. Soil moisture sensor - Rs. 150
+5. Mini DC water pump - Rs. 100
+6. DHT22 Temp. Humidity sensor - Rs. 150
+7. BH1750 light sensor - Rs. 150
+8. ADS1115 Analog to Digital - Rs. 200
+9. LED grow light - Rs. 1000
+10. MOSFET driver module - Rs. 50
+
+Total ~ Rs. 2900

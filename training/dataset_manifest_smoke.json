@@ -1,0 +1,16 @@
+{
+  "dataset_id": "geraldmc/plantvillage-tiny",
+  "configuration": null,
+  "revision": "67dd64021a806e3f9238b805bd948d8bd1a3bf41",
+  "source_split": "train",
+  "split_field": "split",
+  "train_split_value": "train",
+  "test_split_value": "test",
+  "label_field": "class_label",
+  "license": "CC0-1.0",
+  "source": "https://huggingface.co/datasets/geraldmc/plantvillage-tiny",
+  "streaming": false,
+  "cache_policy": "disposable_project_cache",
+  "upstream_dataset_commit": "7f7ecc7e1eaca78107e3affe7cb5abd9427e139a",
+  "notes": "Debug-only stratified subset with the same schema as the full manifest. Never use its metrics as production evidence."
+}

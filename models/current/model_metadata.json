@@ -1,0 +1,68 @@
+{
+  "model_version": "20260815T134308Z",
+  "architecture": "mobilenet_v3_small",
+  "pretrained_weights": "MobileNet_V3_Small_Weights.IMAGENET1K_V1",
+  "format": "ONNX",
+  "sha256": "2a042e9d991bca794ecb56a9ed2dc43ef6a8ed97f7b8920367a49f156d6b2749",
+  "image_size": 224,
+  "resize_shorter": 256,
+  "normalization_mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "normalization_std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "class_count": 2,
+  "task": "binary_health",
+  "labels_file": "labels.json",
+  "dataset_id": "geraldmc/plantvillage-full",
+  "dataset_configuration": "default",
+  "dataset_revision": "f808f2706d3ce50ce14652d2b6863d3cc30cf9c4",
+  "dataset_license": "CC0-1.0",
+  "selected_crops": "all",
+  "fine_tuned_backbone": false,
+  "training_strategy": "single_pass_frozen_backbone_embeddings",
+  "data_loader_workers": 4,
+  "max_training_minutes": 30.0,
+  "epochs": 5,
+  "metrics": {
+    "accuracy": 0.9331384727804165,
+    "macro_f1": 0.9208215340273509,
+    "samples": 10948,
+    "confusion_matrix": [
+      [
+        2949,
+        37
+      ],
+      [
+        695,
+        7267
+      ]
+    ],
+    "per_class": {
+      "healthy": {
+        "precision": 0.8092755214050494,
+        "recall": 0.9876088412592097,
+        "f1": 0.8895927601809955,
+        "support": 2986
+      },
+      "abnormal": {
+        "precision": 0.994934282584885,
+        "recall": 0.9127103742778196,
+        "f1": 0.9520503078737064,
+        "support": 7962
+      }
+    }
+  },
+  "limitations": [
+    "PlantVillage uses mostly controlled backgrounds.",
+    "Generic abnormal output does not identify a cause or disease.",
+    "Plants unlike the training crops may be outside the model domain.",
+    "The model requires validation on real ESP32-CAM images.",
+    "Output is screening evidence, not a definitive diagnosis."
+  ]
+}
