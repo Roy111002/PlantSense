@@ -15,7 +15,7 @@
    - Send image + sensor data to Python AI server
 
    IMPORTANT:
-   All GPIOs are placeholders until the circuit is finalized.
+   This pin map requires the microSD slot to remain unused.
 
 */
 
@@ -90,19 +90,22 @@ const uint8_t BLYNK_GROW_LIGHT_STATE_VPIN = V5;
 
 
 // ============================================================
-//                     GPIO PLACEHOLDERS
+//                     GPIO CONFIGURATION
 // ============================================================
 
-// DO NOT USE THESE VALUES IN FINAL CIRCUIT.
-// Replace after circuit design.
+// GPIO2, GPIO4, GPIO13, GPIO14, and GPIO15 are shared with the
+// AI Thinker ESP32-CAM microSD interface. Do not initialize microSD.
 
-#define DHT_PIN              99
+#define DHT_PIN               2
 
-#define PUMP_PIN             99
-#define GROW_LIGHT_PIN       99
+#define PUMP_PIN              4
+#define GROW_LIGHT_PIN       15
 
-#define I2C_SDA_PIN          99
-#define I2C_SCL_PIN          99
+#define I2C_SDA_PIN          13
+#define I2C_SCL_PIN          14
+
+const uint8_t BH1750_I2C_ADDRESS = 0x23;
+const uint8_t ADS1115_I2C_ADDRESS = 0x48;
 
 
 // ============================================================
@@ -470,7 +473,11 @@ void initializeSensors()
         I2C_SCL_PIN
     );
 
-    if (lightMeter.begin())
+    if (lightMeter.begin(
+        BH1750::CONTINUOUS_HIGH_RES_MODE,
+        BH1750_I2C_ADDRESS,
+        &Wire
+    ))
     {
         Serial.println("BH1750 initialized.");
     }
@@ -479,7 +486,10 @@ void initializeSensors()
         Serial.println("BH1750 initialization failed.");
     }
 
-    if (ads.begin())
+    if (ads.begin(
+        ADS1115_I2C_ADDRESS,
+        &Wire
+    ))
     {
         Serial.println("ADS1115 initialized.");
 

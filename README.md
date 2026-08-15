@@ -130,9 +130,9 @@ For Arduino IDE, open `PlantSense.ino`. If `blynk_credentials.h` is not added
 to the sketch, enter the same values in the fallback block at the top of
 `src/main.cpp`; an available header always takes precedence.
 
-Before powering actuators, replace every GPIO value of `99` in `src/main.cpp`
-with the final circuit pin map and calibrate `DRY_VALUE`, `WET_VALUE`, and the
-control thresholds. The ADS1115 reads soil moisture on channel A0.
+Verify the circuit against [WIRING.md](WIRING.md), then calibrate `DRY_VALUE`,
+`WET_VALUE`, and the control thresholds. The ADS1115 reads soil moisture on
+channel A0.
 
 Create the six Blynk datastreams and dashboard widgets described in
 [BLYNK_SETUP.md](BLYNK_SETUP.md). Then build and upload, replacing `COM5` with
@@ -190,4 +190,5 @@ datasets, PlatformIO builds, caches, and training checkpoints are also ignored.
 - [AI_PIPELINE.md](AI_PIPELINE.md): API and inference flow
 - [TRAINING.md](TRAINING.md): dataset, training strategy, and evaluation
 - [BLYNK_SETUP.md](BLYNK_SETUP.md): Blynk datastreams and widgets
+- [WIRING.md](WIRING.md): pin map, power, protection, and flashing notes
 - [Project report](PlantSense%20AI%20Pod-%20An%20IoT-Based%20Smart%20Plant%20Stress%20%26%20Disease%20Detection%20System.pdf)
