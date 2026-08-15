@@ -144,7 +144,32 @@ For a typical USB-to-serial adapter, connect GPIO0 to GND while flashing,
 reset the ESP32-CAM, upload, then disconnect GPIO0 from GND and reset again.
 Use a stable 5 V supply and a common ground.
 
-## 6. Share a newly trained model
+## 6. Run one complete project cycle — commands only
+
+### PowerShell 1
+
+```powershell
+.\.venv\Scripts\python.exe main.py
+```
+
+### PowerShell 2
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5000/health | ConvertTo-Json -Depth 4
+$PlantSensePort = "COM5"
+.\.venv-platformio\Scripts\platformio.exe run -e esp32cam
+.\.venv-platformio\Scripts\platformio.exe run -e esp32cam -t upload --upload-port $PlantSensePort
+.\.venv-platformio\Scripts\platformio.exe device monitor --port $PlantSensePort --baud 115200
+```
+
+### PowerShell 3
+
+```powershell
+Start-Process "https://blynk.cloud"
+Start-Sleep -Seconds 310
+```
+
+## 7. Share a newly trained model
 
 ```powershell
 git pull
