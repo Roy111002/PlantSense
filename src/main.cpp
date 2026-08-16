@@ -28,15 +28,15 @@
 // Arduino IDE fallback. Edit these values only when the credentials header
 // is not included with the sketch.
 #ifndef BLYNK_TEMPLATE_ID
-#define BLYNK_TEMPLATE_ID "YOUR_BLYNK_TEMPLATE_ID"
+#define BLYNK_TEMPLATE_ID "TMPL3LHIPe0vf"
 #endif
 
 #ifndef BLYNK_TEMPLATE_NAME
-#define BLYNK_TEMPLATE_NAME "PlantSense AI Pod"
+#define BLYNK_TEMPLATE_NAME "PlantSense"
 #endif
 
 #ifndef BLYNK_AUTH_TOKEN
-#define BLYNK_AUTH_TOKEN "YOUR_BLYNK_DEVICE_AUTH_TOKEN"
+#define BLYNK_AUTH_TOKEN "Kn_Wy_TXH7-ba4X2-8Nm_smC8AGVBI4i"
 #endif
 
 #ifndef PLANTSENSE_WIFI_SSID
@@ -60,6 +60,8 @@
 #include <BlynkSimpleEsp32.h>
 
 #include "esp_camera.h"
+#include "esp_err.h"
+#include "img_converters.h"
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
@@ -81,10 +83,10 @@ const char* AI_SERVER_URL = PLANTSENSE_AI_SERVER_URL;
 // These virtual pins must match the datastreams configured in the
 // PlantSense template in Blynk.Console.
 
-const uint8_t BLYNK_TEMPERATURE_VPIN = V0;
-const uint8_t BLYNK_HUMIDITY_VPIN = V1;
-const uint8_t BLYNK_SOIL_MOISTURE_VPIN = V2;
-const uint8_t BLYNK_LIGHT_VPIN = V3;
+const uint8_t BLYNK_TEMPERATURE_VPIN = V2;
+const uint8_t BLYNK_HUMIDITY_VPIN = V3;
+const uint8_t BLYNK_SOIL_MOISTURE_VPIN = V1;
+const uint8_t BLYNK_LIGHT_VPIN = V0;
 const uint8_t BLYNK_PUMP_STATE_VPIN = V4;
 const uint8_t BLYNK_GROW_LIGHT_STATE_VPIN = V5;
 
@@ -177,9 +179,15 @@ unsigned long lastImageUpload = 0;
 
 const unsigned long SENSOR_INTERVAL = 5000;
 
-// Image capture every 5 minutes
+// Image capture every 10 seconds
 
-const unsigned long IMAGE_INTERVAL = 300000;
+const unsigned long IMAGE_INTERVAL = 10000;
+
+// RHYX M21-45 cameras provide RGB565 frames instead of JPEG. The ESP32
+// converts each QVGA frame before sending it to the AI server.
+
+const uint8_t JPEG_CONVERSION_QUALITY = 80;
+const size_t JPEG_CONVERSION_BUFFER_LIMIT = 128 * 1024;
 
 // Retry Blynk without blocking the local plant-control loop.
 
@@ -208,6 +216,7 @@ bool growLightState = false;
 
 bool sensorDataAvailable = false;
 bool blynkConfigured = false;
+bool cameraAvailable = false;
 
 
 // ============================================================
@@ -246,19 +255,25 @@ bool initializeCamera()
 
     config.xclk_freq_hz = 20000000;
 
-    config.pixel_format = PIXFORMAT_JPEG;
+    bool psramAvailable = psramFound();
 
-    if (psramFound())
+    config.pixel_format = PIXFORMAT_RGB565;
+    config.frame_size =
+        psramAvailable
+        ? FRAMESIZE_QVGA
+        : FRAMESIZE_QQVGA;
+    config.fb_count = 1;
+    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+    config.fb_location =
+        psramAvailable
+        ? CAMERA_FB_IN_PSRAM
+        : CAMERA_FB_IN_DRAM;
+
+    if (!psramAvailable)
     {
-        config.frame_size = FRAMESIZE_VGA;
-        config.jpeg_quality = 10;
-        config.fb_count = 2;
-    }
-    else
-    {
-        config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 12;
-        config.fb_count = 1;
+        Serial.println(
+            "[CAMERA] PSRAM unavailable; using QQVGA."
+        );
     }
 
     esp_err_t err = esp_camera_init(&config);
@@ -266,14 +281,27 @@ bool initializeCamera()
     if (err != ESP_OK)
     {
         Serial.printf(
-            "Camera initialization failed: 0x%x\n",
-            err
+            "Camera initialization failed: 0x%x (%s)\n",
+            err,
+            esp_err_to_name(err)
         );
 
         return false;
     }
 
-    Serial.println("Camera initialized.");
+    Serial.println(
+        "Camera initialized for RGB565 capture."
+    );
+
+    sensor_t* cameraSensor = esp_camera_sensor_get();
+
+    if (cameraSensor)
+    {
+        Serial.printf(
+            "Camera sensor PID: 0x%04x\n",
+            cameraSensor->id.PID
+        );
+    }
 
     return true;
 }
@@ -685,6 +713,15 @@ void controlPlant()
 
 camera_fb_t* captureImage()
 {
+    if (!cameraAvailable)
+    {
+        Serial.println(
+            "Camera unavailable; skipping image capture."
+        );
+
+        return nullptr;
+    }
+
     camera_fb_t* fb = esp_camera_fb_get();
 
     if (!fb)
@@ -696,13 +733,80 @@ camera_fb_t* captureImage()
         return nullptr;
     }
 
-    Serial.print("Image captured: ");
-
-    Serial.print(fb->len);
-
-    Serial.println(" bytes");
+    Serial.printf(
+        "Image captured: %ux%u, format=%d, %u bytes\n",
+        static_cast<unsigned int>(fb->width),
+        static_cast<unsigned int>(fb->height),
+        static_cast<int>(fb->format),
+        static_cast<unsigned int>(fb->len)
+    );
 
     return fb;
+}
+
+
+// ============================================================
+//                     CONVERT IMAGE TO JPEG
+// ============================================================
+
+bool convertFrameToJpeg(
+    camera_fb_t* fb,
+    uint8_t** jpegBuffer,
+    size_t* jpegLength
+)
+{
+    if (!fb || !jpegBuffer || !jpegLength)
+        return false;
+
+    *jpegBuffer = nullptr;
+    *jpegLength = 0;
+
+    unsigned long conversionStarted = millis();
+
+    Serial.println(
+        "[CAMERA] Converting RGB565 frame to JPEG..."
+    );
+
+    bool converted = frame2jpg(
+        fb,
+        JPEG_CONVERSION_QUALITY,
+        jpegBuffer,
+        jpegLength
+    );
+
+    bool validJpeg =
+        converted &&
+        *jpegBuffer &&
+        *jpegLength >= 4 &&
+        *jpegLength < JPEG_CONVERSION_BUFFER_LIMIT &&
+        (*jpegBuffer)[0] == 0xFF &&
+        (*jpegBuffer)[1] == 0xD8 &&
+        (*jpegBuffer)[*jpegLength - 2] == 0xFF &&
+        (*jpegBuffer)[*jpegLength - 1] == 0xD9;
+
+    if (!validJpeg)
+    {
+        free(*jpegBuffer);
+        *jpegBuffer = nullptr;
+        *jpegLength = 0;
+
+        Serial.printf(
+            "[CAMERA] JPEG conversion failed; free heap=%u, "
+            "free PSRAM=%u.\n",
+            static_cast<unsigned int>(ESP.getFreeHeap()),
+            static_cast<unsigned int>(ESP.getFreePsram())
+        );
+
+        return false;
+    }
+
+    Serial.printf(
+        "[CAMERA] JPEG ready: %u bytes in %lu ms.\n",
+        static_cast<unsigned int>(*jpegLength),
+        millis() - conversionStarted
+    );
+
+    return true;
 }
 
 
@@ -710,9 +814,12 @@ camera_fb_t* captureImage()
 //                     SEND IMAGE + DATA
 // ============================================================
 
-bool sendToAI(camera_fb_t* fb)
+bool sendToAI(
+    const uint8_t* jpegBuffer,
+    size_t jpegLength
+)
 {
-    if (!fb)
+    if (!jpegBuffer || jpegLength == 0)
         return false;
 
     if (WiFi.status() != WL_CONNECTED)
@@ -727,7 +834,14 @@ bool sendToAI(camera_fb_t* fb)
 
     HTTPClient http;
 
-    http.begin(AI_SERVER_URL);
+    if (!http.begin(AI_SERVER_URL))
+    {
+        Serial.println(
+            "[AI] Invalid server URL."
+        );
+
+        return false;
+    }
 
     http.setTimeout(30000);
 
@@ -789,7 +903,7 @@ bool sendToAI(camera_fb_t* fb)
 
     size_t totalLength =
         bodyStart.length() +
-        fb->len +
+        jpegLength +
         bodyEnd.length();
 
 
@@ -825,11 +939,11 @@ bool sendToAI(camera_fb_t* fb)
 
     memcpy(
         request + offset,
-        fb->buf,
-        fb->len
+        jpegBuffer,
+        jpegLength
     );
 
-    offset += fb->len;
+    offset += jpegLength;
 
 
     memcpy(
@@ -865,109 +979,136 @@ bool sendToAI(camera_fb_t* fb)
     free(request);
 
 
-    if (responseCode > 0)
+    if (responseCode <= 0)
     {
         Serial.print(
-            "[AI] HTTP response: "
+            "[AI] HTTP error: "
         );
 
         Serial.println(responseCode);
 
-
-        String response =
-            http.getString();
-
-
-        Serial.println(
-            "[AI] Server response:"
-        );
-
-        Serial.println(response);
-
-
-        // ----------------------------------------------------
-        // Parse AI response
-        // ----------------------------------------------------
-
-        StaticJsonDocument<4096> doc;
-
-        DeserializationError error =
-            deserializeJson(
-                doc,
-                response
-            );
-
-
-        if (!error)
-        {
-            const char* disease =
-                doc["disease"];
-
-            const char* stress =
-                doc["stress"];
-
-            float confidence =
-                doc["confidence"];
-
-            const char* recommendation =
-                doc["recommendation"];
-
-
-            Serial.println();
-            Serial.println(
-                "========== AI RESULT =========="
-            );
-
-            Serial.print(
-                "Disease: "
-            );
-
-            Serial.println(disease);
-
-
-            Serial.print(
-                "Stress: "
-            );
-
-            Serial.println(stress);
-
-
-            Serial.print(
-                "Confidence: "
-            );
-
-            Serial.println(confidence);
-
-
-            Serial.print(
-                "Recommendation: "
-            );
-
-            Serial.println(recommendation);
-
-
-            Serial.println(
-                "==============================="
-            );
-        }
-
-
         http.end();
 
-        return true;
+        return false;
     }
 
 
     Serial.print(
-        "[AI] HTTP error: "
+        "[AI] HTTP response: "
     );
 
     Serial.println(responseCode);
 
 
+    String response =
+        http.getString();
+
+
+    Serial.println(
+        "[AI] Server response:"
+    );
+
+    Serial.println(response);
+
+
+    if (responseCode < 200 || responseCode >= 300)
+    {
+        http.end();
+
+        return false;
+    }
+
+
+    // ----------------------------------------------------
+    // Parse AI response
+    // ----------------------------------------------------
+
+    StaticJsonDocument<4096> doc;
+
+    DeserializationError error =
+        deserializeJson(
+            doc,
+            response
+        );
+
+
+    if (error)
+    {
+        Serial.print(
+            "[AI] Invalid JSON response: "
+        );
+        Serial.println(error.c_str());
+
+        http.end();
+
+        return false;
+    }
+
+
+    const char* plantCondition =
+        doc["plant_condition"] | "unknown";
+
+    const char* disease =
+        doc["disease"] | "unknown";
+
+    const char* stress =
+        doc["stress"] | "unknown";
+
+    float confidence =
+        doc["confidence"] | 0.0;
+
+    const char* recommendation =
+        doc["recommendation"] | "No recommendation returned.";
+
+
+    Serial.println();
+    Serial.println(
+        "========== AI RESULT =========="
+    );
+
+    Serial.print(
+        "Plant condition: "
+    );
+
+    Serial.println(plantCondition);
+
+
+    Serial.print(
+        "Disease: "
+    );
+
+    Serial.println(disease);
+
+
+    Serial.print(
+        "Stress: "
+    );
+
+    Serial.println(stress);
+
+
+    Serial.print(
+        "Confidence: "
+    );
+
+    Serial.println(confidence);
+
+
+    Serial.print(
+        "Recommendation: "
+    );
+
+    Serial.println(recommendation);
+
+
+    Serial.println(
+        "==============================="
+    );
+
+
     http.end();
 
-    return false;
+    return true;
 }
 
 
@@ -1029,7 +1170,7 @@ void setup()
     );
 
 
-    initializeCamera();
+    cameraAvailable = initializeCamera();
 
     initializeSensors();
 
@@ -1079,19 +1220,36 @@ void loop()
         IMAGE_INTERVAL
     )
     {
-        lastImageUpload = now;
-
-
         camera_fb_t* fb =
             captureImage();
 
 
         if (fb)
         {
-            sendToAI(fb);
+            uint8_t* jpegBuffer = nullptr;
+            size_t jpegLength = 0;
+
+            bool converted = convertFrameToJpeg(
+                fb,
+                &jpegBuffer,
+                &jpegLength
+            );
 
             esp_camera_fb_return(fb);
+
+            if (converted)
+            {
+                sendToAI(
+                    jpegBuffer,
+                    jpegLength
+                );
+            }
+
+            free(jpegBuffer);
         }
+
+        // Wait a full interval after the attempt, including any HTTP delay.
+        lastImageUpload = millis();
     }
 
 

@@ -134,6 +134,9 @@ Verify the circuit against [WIRING.md](WIRING.md), then calibrate `DRY_VALUE`,
 `WET_VALUE`, and the control thresholds. The ADS1115 reads soil moisture on
 channel A0.
 
+The firmware captures RHYX M21-45 frames as QVGA RGB565 and converts them to
+JPEG in software before upload; no separate camera library is required.
+
 Create the six Blynk datastreams and dashboard widgets described in
 [BLYNK_SETUP.md](BLYNK_SETUP.md). Then build and upload, replacing `COM5` with
 the adapter's port:

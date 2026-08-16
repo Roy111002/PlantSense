@@ -40,6 +40,8 @@
 
 ## ESP32-CAM restrictions
 
+- The RHYX M21-45 camera uses RGB565 capture with firmware JPEG conversion;
+  keep the camera ribbon fully seated and use a stable 5 V supply.
 - The microSD slot cannot be used because GPIO2, GPIO4, GPIO13, GPIO14, and
   GPIO15 are assigned to this circuit.
 - GPIO4 also drives the onboard flash LED, so it lights when the pump output

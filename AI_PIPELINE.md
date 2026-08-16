@@ -5,7 +5,8 @@ server and no paid inference API is called.
 
 ## Runtime flow
 
-1. The ESP32-CAM posts a JPEG and sensor readings to `/analyze`.
+1. The RHYX M21-45 captures a QVGA RGB565 frame. Firmware converts it to JPEG
+   and posts it with sensor readings to `/analyze`.
 2. The server rejects unreadable, extremely dark, overexposed, or undersized
    images.
 3. ONNX Runtime classifies an acceptable image as `healthy` or `abnormal`.
