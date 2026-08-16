@@ -40,15 +40,15 @@
 #endif
 
 #ifndef PLANTSENSE_WIFI_SSID
-#define PLANTSENSE_WIFI_SSID "YOUR_WIFI_SSID"
+#define PLANTSENSE_WIFI_SSID "Gayatridey"
 #endif
 
 #ifndef PLANTSENSE_WIFI_PASSWORD
-#define PLANTSENSE_WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+#define PLANTSENSE_WIFI_PASSWORD "youan389"
 #endif
 
 #ifndef PLANTSENSE_AI_SERVER_URL
-#define PLANTSENSE_AI_SERVER_URL "http://YOUR_SERVER_IP:5000/analyze"
+#define PLANTSENSE_AI_SERVER_URL "http://192.168.0.103:5000/analyze"
 #endif
 
 #define BLYNK_PRINT Serial
@@ -62,8 +62,6 @@
 #include "esp_camera.h"
 #include "esp_err.h"
 #include "img_converters.h"
-#include "soc/soc.h"
-#include "soc/rtc_cntl_reg.h"
 
 #include <DHT.h>
 #include <Wire.h>
@@ -108,6 +106,8 @@ const uint8_t BLYNK_GROW_LIGHT_STATE_VPIN = V5;
 
 const uint8_t BH1750_I2C_ADDRESS = 0x23;
 const uint8_t ADS1115_I2C_ADDRESS = 0x48;
+const uint16_t I2C_TIMEOUT_MS = 50;
+const unsigned long ADS1115_CONVERSION_TIMEOUT_MS = 100;
 
 
 // ============================================================
@@ -214,9 +214,14 @@ float soilMoisture = 0;
 bool pumpState = false;
 bool growLightState = false;
 
-bool sensorDataAvailable = false;
 bool blynkConfigured = false;
 bool cameraAvailable = false;
+bool bh1750Available = false;
+bool ads1115Available = false;
+bool temperatureAvailable = false;
+bool humidityAvailable = false;
+bool lightDataAvailable = false;
+bool soilDataAvailable = false;
 
 
 // ============================================================
@@ -370,32 +375,43 @@ void publishSensorDataToBlynk()
 {
     if (
         !blynkConfigured ||
-        !sensorDataAvailable ||
         !Blynk.connected()
     )
     {
         return;
     }
 
-    Blynk.virtualWrite(
-        BLYNK_TEMPERATURE_VPIN,
-        temperature
-    );
+    if (temperatureAvailable)
+    {
+        Blynk.virtualWrite(
+            BLYNK_TEMPERATURE_VPIN,
+            temperature
+        );
+    }
 
-    Blynk.virtualWrite(
-        BLYNK_HUMIDITY_VPIN,
-        humidity
-    );
+    if (humidityAvailable)
+    {
+        Blynk.virtualWrite(
+            BLYNK_HUMIDITY_VPIN,
+            humidity
+        );
+    }
 
-    Blynk.virtualWrite(
-        BLYNK_SOIL_MOISTURE_VPIN,
-        soilMoisture
-    );
+    if (soilDataAvailable)
+    {
+        Blynk.virtualWrite(
+            BLYNK_SOIL_MOISTURE_VPIN,
+            soilMoisture
+        );
+    }
 
-    Blynk.virtualWrite(
-        BLYNK_LIGHT_VPIN,
-        lightLux
-    );
+    if (lightDataAvailable)
+    {
+        Blynk.virtualWrite(
+            BLYNK_LIGHT_VPIN,
+            lightLux
+        );
+    }
 
     Blynk.virtualWrite(
         BLYNK_PUMP_STATE_VPIN,
@@ -492,20 +508,93 @@ void maintainBlynkConnection(unsigned long now)
 //                     SENSOR INITIALIZATION
 // ============================================================
 
+bool i2cDeviceResponds(uint8_t address)
+{
+    Wire.beginTransmission(address);
+
+    return Wire.endTransmission() == 0;
+}
+
+
+void scanI2CBus()
+{
+    uint8_t deviceCount = 0;
+
+    Serial.println("[I2C] Scanning bus...");
+
+    if (
+        digitalRead(I2C_SDA_PIN) == LOW ||
+        digitalRead(I2C_SCL_PIN) == LOW
+    )
+    {
+        Serial.printf(
+            "[I2C] Bus held low: SDA=%d, SCL=%d. "
+            "Check shorts, power, and swapped wires.\n",
+            digitalRead(I2C_SDA_PIN),
+            digitalRead(I2C_SCL_PIN)
+        );
+
+        return;
+    }
+
+    for (uint8_t address = 0x08; address <= 0x77; address++)
+    {
+        if (i2cDeviceResponds(address))
+        {
+            Serial.printf(
+                "[I2C] Device found at 0x%02X.\n",
+                address
+            );
+
+            deviceCount++;
+        }
+
+        delay(0);
+    }
+
+    if (deviceCount == 0)
+    {
+        Serial.println(
+            "[I2C] No devices found; check 3.3 V, GND, "
+            "SDA GPIO13, and SCL GPIO14."
+        );
+    }
+}
+
+
 void initializeSensors()
 {
     dht.begin();
 
-    Wire.begin(
+    Serial.println(
+        "DHT22 started; awaiting the first reading."
+    );
+
+    bool i2cStarted = Wire.begin(
         I2C_SDA_PIN,
         I2C_SCL_PIN
     );
 
-    if (lightMeter.begin(
+    if (!i2cStarted)
+    {
+        Serial.println(
+            "[I2C] Controller initialization failed."
+        );
+
+        return;
+    }
+
+    Wire.setTimeOut(I2C_TIMEOUT_MS);
+
+    scanI2CBus();
+
+    bh1750Available = lightMeter.begin(
         BH1750::CONTINUOUS_HIGH_RES_MODE,
         BH1750_I2C_ADDRESS,
         &Wire
-    ))
+    );
+
+    if (bh1750Available)
     {
         Serial.println("BH1750 initialized.");
     }
@@ -514,10 +603,12 @@ void initializeSensors()
         Serial.println("BH1750 initialization failed.");
     }
 
-    if (ads.begin(
+    ads1115Available = ads.begin(
         ADS1115_I2C_ADDRESS,
         &Wire
-    ))
+    );
+
+    if (ads1115Available)
     {
         Serial.println("ADS1115 initialized.");
 
@@ -547,7 +638,43 @@ float readSoilMoisture()
        Replace these after testing.
     */
 
-    int16_t raw = ads.readADC_SingleEnded(0);
+    if (
+        !ads1115Available ||
+        !i2cDeviceResponds(ADS1115_I2C_ADDRESS)
+    )
+    {
+        Serial.println(
+            "[ADS1115] Sensor unavailable; soil reading skipped."
+        );
+
+        return NAN;
+    }
+
+    ads.startADCReading(
+        ADS1X15_REG_CONFIG_MUX_SINGLE_0,
+        false
+    );
+
+    unsigned long conversionStarted = millis();
+
+    while (!ads.conversionComplete())
+    {
+        if (
+            millis() - conversionStarted >=
+            ADS1115_CONVERSION_TIMEOUT_MS
+        )
+        {
+            Serial.println(
+                "[ADS1115] Conversion timed out."
+            );
+
+            return NAN;
+        }
+
+        delay(1);
+    }
+
+    int16_t raw = ads.getLastConversionResults();
 
     const float DRY_VALUE = 20000.0;
     const float WET_VALUE = 8000.0;
@@ -576,41 +703,108 @@ void readSensors()
     float newTemperature = dht.readTemperature();
     float newHumidity = dht.readHumidity();
 
-    if (!isnan(newTemperature))
+    temperatureAvailable = !isnan(newTemperature);
+    humidityAvailable = !isnan(newHumidity);
+
+    if (temperatureAvailable)
     {
         temperature = newTemperature;
     }
 
-    if (!isnan(newHumidity))
+    if (humidityAvailable)
     {
         humidity = newHumidity;
     }
 
-    lightLux = lightMeter.readLightLevel();
+    if (!temperatureAvailable || !humidityAvailable)
+    {
+        Serial.println(
+            "[DHT22] Reading failed; check DATA and its 3.3 V pull-up."
+        );
+    }
 
-    soilMoisture = readSoilMoisture();
+    lightDataAvailable = false;
 
-    sensorDataAvailable = true;
+    if (
+        bh1750Available &&
+        i2cDeviceResponds(BH1750_I2C_ADDRESS)
+    )
+    {
+        float newLightLux = lightMeter.readLightLevel();
 
+        if (newLightLux >= 0.0)
+        {
+            lightLux = newLightLux;
+            lightDataAvailable = true;
+        }
+    }
+
+    if (!lightDataAvailable)
+    {
+        Serial.println(
+            "[BH1750] Reading unavailable."
+        );
+    }
+
+    float newSoilMoisture = readSoilMoisture();
+
+    soilDataAvailable = !isnan(newSoilMoisture);
+
+    if (soilDataAvailable)
+    {
+        soilMoisture = newSoilMoisture;
+    }
 
     Serial.println();
     Serial.println("========== SENSOR DATA ==========");
 
     Serial.print("Temperature: ");
-    Serial.print(temperature);
-    Serial.println(" C");
+
+    if (temperatureAvailable)
+    {
+        Serial.print(temperature);
+        Serial.println(" C");
+    }
+    else
+    {
+        Serial.println("unavailable");
+    }
 
     Serial.print("Humidity: ");
-    Serial.print(humidity);
-    Serial.println(" %");
+
+    if (humidityAvailable)
+    {
+        Serial.print(humidity);
+        Serial.println(" %");
+    }
+    else
+    {
+        Serial.println("unavailable");
+    }
 
     Serial.print("Light: ");
-    Serial.print(lightLux);
-    Serial.println(" lux");
+
+    if (lightDataAvailable)
+    {
+        Serial.print(lightLux);
+        Serial.println(" lux");
+    }
+    else
+    {
+        Serial.println("unavailable");
+    }
 
     Serial.print("Soil Moisture: ");
-    Serial.print(soilMoisture);
-    Serial.println(" %");
+
+    if (soilDataAvailable)
+    {
+        Serial.print(soilMoisture);
+        Serial.println(" %");
+    }
+    else
+    {
+        Serial.println("unavailable");
+    }
 
     Serial.println("=================================");
 }
@@ -626,7 +820,18 @@ void controlPlant()
     // SOIL MOISTURE
     // --------------------------------------------------------
 
-    if (soilMoisture < SOIL_DRY_THRESHOLD)
+    if (!soilDataAvailable)
+    {
+        digitalWrite(PUMP_PIN, LOW);
+
+        pumpState = false;
+
+        Serial.println(
+            "[CONTROL] Soil data unavailable -> PUMP OFF"
+        );
+    }
+
+    else if (soilMoisture < SOIL_DRY_THRESHOLD)
     {
         digitalWrite(PUMP_PIN, HIGH);
 
@@ -653,7 +858,18 @@ void controlPlant()
     // GROW LIGHT
     // --------------------------------------------------------
 
-    if (lightLux < MIN_LIGHT_LUX)
+    if (!lightDataAvailable)
+    {
+        digitalWrite(GROW_LIGHT_PIN, LOW);
+
+        growLightState = false;
+
+        Serial.println(
+            "[CONTROL] Light data unavailable -> GROW LIGHT OFF"
+        );
+    }
+
+    else if (lightLux < MIN_LIGHT_LUX)
     {
         digitalWrite(GROW_LIGHT_PIN, HIGH);
 
@@ -681,8 +897,11 @@ void controlPlant()
     // --------------------------------------------------------
 
     if (
+        temperatureAvailable &&
+        (
         temperature < MIN_TEMPERATURE ||
         temperature > MAX_TEMPERATURE
+        )
     )
     {
         Serial.println(
@@ -696,8 +915,11 @@ void controlPlant()
     // --------------------------------------------------------
 
     if (
+        humidityAvailable &&
+        (
         humidity < MIN_HUMIDITY ||
         humidity > MAX_HUMIDITY
+        )
     )
     {
         Serial.println(
@@ -814,6 +1036,16 @@ bool convertFrameToJpeg(
 //                     SEND IMAGE + DATA
 // ============================================================
 
+bool allSensorReadingsAvailable()
+{
+    return
+        temperatureAvailable &&
+        humidityAvailable &&
+        lightDataAvailable &&
+        soilDataAvailable;
+}
+
+
 bool sendToAI(
     const uint8_t* jpegBuffer,
     size_t jpegLength
@@ -821,6 +1053,15 @@ bool sendToAI(
 {
     if (!jpegBuffer || jpegLength == 0)
         return false;
+
+    if (!allSensorReadingsAvailable())
+    {
+        Serial.println(
+            "[AI] Sensor data incomplete; upload skipped."
+        );
+
+        return false;
+    }
 
     if (WiFi.status() != WL_CONNECTED)
     {
@@ -1121,15 +1362,6 @@ void setup()
     Serial.begin(115200);
 
     delay(1000);
-
-
-    // Prevent brownout reset during development.
-    // Revisit this for the final power design.
-
-    WRITE_PERI_REG(
-        RTC_CNTL_BROWN_OUT_REG,
-        0
-    );
 
 
     Serial.println();
